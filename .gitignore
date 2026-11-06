@@ -1,0 +1,26 @@
+# 依赖
+node_modules/
+
+# 构建产物
+server/dist/
+web/dist/
+dist/
+tmp-deploy/
+
+# 运行时数据与本地配置
+test-data/
+server/config.json
+server/data/
+*.log
+
+# 打包产物
+*.tar.gz
+*.tar.xz
+*.tgz
+
+# 系统/编辑器文件
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/

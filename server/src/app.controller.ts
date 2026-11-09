@@ -111,6 +111,19 @@ export class AppController {
     checkAuth(token);
     return { items: this.monitor.userShare(hoursOf(hours)) };
   }
+
+  @Get('userprofile')
+  userProfile(
+    @Headers('x-monitor-token') token: string,
+    @Query('hours') hours: string,
+    @Query('users') users: string,
+    @Query('limit') limit: string,
+  ) {
+    checkAuth(token);
+    const ul = Math.min(50, Number(users) || 10);
+    const lm = Math.min(50, Number(limit) || 10);
+    return { items: this.monitor.userProfile(hoursOf(hours), ul, lm) };
+  }
 }
 
 export { countryName };

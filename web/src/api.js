@@ -49,4 +49,6 @@ export const api = {
     request(`/api/events?hours=${hours}&limit=${limit}${action ? `&action=${action}` : ''}`),
   security: (hours) => request(`/api/security?hours=${hours}`),
   userShare: (hours) => request(`/api/usershare?hours=${hours}`),
+  userProfile: (hours, users = 10, limit = 10) =>
+    request(`/api/userprofile?hours=${hours}&users=${users}&limit=${limit}`),
 };

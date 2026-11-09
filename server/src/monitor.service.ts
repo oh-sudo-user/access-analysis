@@ -59,10 +59,12 @@ export function countryName(code: string): string {
   return COUNTRY_NAMES[code] || code || '未知';
 }
 
+const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+
 function normalizeHost(h: string | undefined): string | null {
   if (!h) return null;
   const host = h.toLowerCase();
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host;
+  if (IP_RE.test(host)) return host;
   return host.replace(/^www\./, '');
 }
 
@@ -488,6 +490,44 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       topTargets: toArr(targets),
       recent,
     };
+  }
+
+  // 每个用户常访问的网站 / 来源 IP 画像（仅统计已接受的连接）
+  userProfile(rangeHours: number, userLimit: number, itemLimit: number) {
+    const from = this.cutOff(rangeHours);
+    const users = new Map<
+      string,
+      { count: number; sites: Map<string, number>; ips: Map<string, number> }
+    >();
+    for (let i = this.indexOfFirst(from); i < this.events.length; i++) {
+      const ev = this.events[i];
+      if (ev.action !== 'accepted') continue;
+      const key = ev.email || '(匿名)';
+      let u = users.get(key);
+      if (!u) {
+        u = { count: 0, sites: new Map(), ips: new Map() };
+        users.set(key, u);
+      }
+      u.count++;
+      u.sites.set(ev.host, (u.sites.get(ev.host) || 0) + 1);
+      u.ips.set(ev.ip, (u.ips.get(ev.ip) || 0) + 1);
+    }
+    const topOf = (m: Map<string, number>) =>
+      [...m.entries()]
+        .map(([key, count]) => ({ key, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, itemLimit);
+    return [...users.entries()]
+      .map(([key, u]) => ({
+        key,
+        count: u.count,
+        uniqueSites: u.sites.size,
+        uniqueIps: u.ips.size,
+        sites: topOf(u.sites),
+        ips: topOf(u.ips),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, userLimit);
   }
 
   // 每个用户的流量占比估算：用事件数占比拆分区间总流量

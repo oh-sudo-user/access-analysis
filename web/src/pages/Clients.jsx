@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Col, Row, Tag, Typography } from 'antd';
+import { Col, Empty, Row, Tag, Typography } from 'antd';
 import { ProCard } from '@ant-design/pro-components';
 import { api } from '../api';
 import { useMonitor, usePoll, fmtNum } from '../monitor';
@@ -8,6 +8,30 @@ import TopNList, { flagEmoji } from '../components/TopNList';
 
 const { Text } = Typography;
 
+function UserProfileCard({ user }) {
+  return (
+    <div style={{ padding: '14px 16px', borderBottom: '1px solid #f7f8fa' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Tag color="green" style={{ marginRight: 0 }}>VLESS</Tag>
+        <Text strong className="mono" style={{ fontSize: 13 }}>{user.key}</Text>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {fmtNum(user.count)} 次访问 · {user.uniqueSites} 个网站 · {user.uniqueIps} 个 IP
+        </Text>
+      </div>
+      <Row gutter={[16, 8]}>
+        <Col xs={24} lg={12}>
+          <Text type="secondary" style={{ fontSize: 12 }}>常访问网站 Top {user.sites.length}</Text>
+          <TopNList items={user.sites} max={10} />
+        </Col>
+        <Col xs={24} lg={12}>
+          <Text type="secondary" style={{ fontSize: 12 }}>来源 IP Top {user.ips.length}</Text>
+          <TopNList items={user.ips} max={10} />
+        </Col>
+      </Row>
+    </div>
+  );
+}
+
 export default function Clients() {
   const { hours } = useMonitor();
   const [ov, setOv] = useState(null);
@@ -15,23 +39,26 @@ export default function Clients() {
   const [countries, setCountries] = useState([]);
   const [users, setUsers] = useState([]);
   const [transport, setTransport] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
 
   usePoll(async () => {
     setLoading(true);
     try {
-      const [o, ip, ct, us, tr] = await Promise.all([
+      const [o, ip, ct, us, tr, pf] = await Promise.all([
         api.overview(hours),
         api.top('ip', hours, 10),
         api.countries(hours, 10),
         api.top('user', hours, 10),
         api.top('transport', hours, 5),
+        api.userProfile(hours, 10, 10),
       ]);
       setOv(o);
       setIps(ip.items);
       setCountries(ct.items);
       setUsers(us.items);
       setTransport(tr.items);
+      setProfiles(pf.items);
     } finally {
       setLoading(false);
     }
@@ -118,6 +145,20 @@ export default function Clients() {
           </ProCard>
         </Col>
       </Row>
+
+      <ProCard
+        className="monitor-card"
+        title="用户访问画像（常访问网站 / IP Top 10）"
+        style={{ marginTop: 16 }}
+        loading={loading && profiles.length === 0}
+        bodyStyle={{ padding: 0 }}
+      >
+        {profiles.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: '32px 0' }} />
+        ) : (
+          profiles.map((u) => <UserProfileCard key={u.key} user={u} />)
+        )}
+      </ProCard>
     </div>
   );
 }

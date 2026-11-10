@@ -16,6 +16,7 @@ export interface AccessEvent {
   tag: string;
   email: string;
   country: string;
+  addr?: string;
 }
 
 interface TrafficSample {
@@ -57,6 +58,70 @@ function lookupCountry(ip: string): string {
 
 export function countryName(code: string): string {
   return COUNTRY_NAMES[code] || code || '未知';
+}
+
+// ---------- 地市级地址解析（离线 ip2region） ----------
+
+interface Ip2RegionLike {
+  search(ip: string): { country: string; province: string; city: string; isp: string } | null;
+}
+
+let ip2: Ip2RegionLike | null = null;
+let ip2Failed = false;
+
+function getIp2Region(): Ip2RegionLike | null {
+  if (ip2 || ip2Failed) return ip2;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Ip2Region = require('ip2region').default;
+    ip2 = new Ip2Region();
+  } catch {
+    ip2Failed = true;
+  }
+  return ip2;
+}
+
+const PRIVATE_RE =
+  /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|fc|fd|fe80)/i;
+
+const addrCache = new Map<string, string>();
+
+function joinAddr(country: string, province: string, city: string): string {
+  const parts: string[] = [];
+  if (country) parts.push(country);
+  let prov = province;
+  if (prov && city && (city === prov || prov === city.replace(/[省市]$/, ''))) prov = '';
+  if (prov) parts.push(prov);
+  if (city) parts.push(city);
+  return parts.join(' ');
+}
+
+/** IP → "中国 浙江省 杭州市" 形式的地址；无城市数据时退化为国家/省级 */
+export function lookupAddr(ip: string): string {
+  if (!ip) return '未知';
+  const cached = addrCache.get(ip);
+  if (cached) return cached;
+  let addr: string;
+  if (PRIVATE_RE.test(ip)) {
+    addr = '内网 IP';
+  } else {
+    const q = getIp2Region();
+    let res: ReturnType<Ip2RegionLike['search']> = null;
+    try {
+      res = q ? q.search(ip) : null;
+    } catch {
+      res = null;
+    }
+    if (res && (res.country || res.province || res.city)) {
+      addr = joinAddr(res.country || countryName(lookupCountry(ip)), res.province, res.city);
+    } else {
+      const code = lookupCountry(ip);
+      addr = code === 'ZZ' ? '未知' : countryName(code);
+    }
+  }
+  if (addrCache.size > 50000) addrCache.clear();
+  addrCache.set(ip, addr);
+  return addr;
 }
 
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
@@ -426,7 +491,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       if (ev.action !== 'accepted') cur.rejected++;
       map.set(key, cur);
     }
-    return [...map.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+    const items = [...map.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+    if (dim === 'ip') {
+      return items.map((x) => ({ ...x, addr: lookupAddr(x.key) }));
+    }
+    return items;
   }
 
   topCountriesWithCode(rangeHours: number, limit: number) {
@@ -452,7 +521,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       const ev = this.events[i];
       if (ev.t < from) break;
       if (action && ev.action !== action) continue;
-      out.push(ev);
+      out.push({ ...ev, addr: lookupAddr(ev.ip) });
     }
     return out;
   }
@@ -475,7 +544,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     for (let i = this.events.length - 1; i >= 0 && recent.length < 50; i--) {
       const ev = this.events[i];
       if (ev.t < from) break;
-      if (ev.action === 'rejected') recent.push(ev);
+      if (ev.action === 'rejected') recent.push({ ...ev, addr: lookupAddr(ev.ip) });
     }
     const toArr = (m: Map<string, number>) =>
       [...m.entries()]
@@ -485,7 +554,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     return {
       rangeHours,
       rejected,
-      topIps: toArr(ipMap),
+      topIps: toArr(ipMap).map((x) => ({ ...x, addr: lookupAddr(x.key) })),
       topCountries: toArr(countryMap).map((x) => ({ ...x, name: countryName(x.key) })),
       topTargets: toArr(targets),
       recent,
@@ -524,7 +593,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
         uniqueSites: u.sites.size,
         uniqueIps: u.ips.size,
         sites: topOf(u.sites),
-        ips: topOf(u.ips),
+        ips: topOf(u.ips).map((x) => ({ ...x, addr: lookupAddr(x.key) })),
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, userLimit);

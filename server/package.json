@@ -13,6 +13,7 @@
     "@nestjs/platform-express": "^10.4.6",
     "express": "^4.21.1",
     "geoip-country": "^5.0.202611040312",
+    "ip2region": "^2.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

@@ -26,11 +26,20 @@ export default function TopNList({ items, loading, renderKey, max = 10 }) {
           style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}
         >
           <span className={`rank-badge ${i < 3 ? `top${i + 1}` : ''}`}>{i + 1}</span>
-          <Tooltip title={it.key}>
-            <Text ellipsis style={{ width: 190, flexShrink: 0, fontSize: 13 }} className={/^[\d.]+$/.test(it.key) ? 'mono' : ''}>
-              {renderKey ? renderKey(it) : it.key}
-            </Text>
-          </Tooltip>
+          <div style={{ width: 190, flexShrink: 0, overflow: 'hidden' }}>
+            <Tooltip title={it.key}>
+              <Text ellipsis style={{ display: 'block', fontSize: 13 }} className={/^[\d.]+$/.test(it.key) ? 'mono' : ''}>
+                {renderKey ? renderKey(it) : it.key}
+              </Text>
+            </Tooltip>
+            {it.addr ? (
+              <Tooltip title={it.addr}>
+                <Text type="secondary" ellipsis style={{ display: 'block', fontSize: 11.5, lineHeight: 1.5 }}>
+                  {it.addr}
+                </Text>
+              </Tooltip>
+            ) : null}
+          </div>
           <div style={{ flex: 1, height: 8, background: '#f0f1f3', borderRadius: 6, overflow: 'hidden' }}>
             <div
               style={{

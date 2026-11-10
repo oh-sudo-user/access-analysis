@@ -22,11 +22,13 @@ export const eventColumns = [
   {
     title: '客户端 IP',
     dataIndex: 'ip',
-    width: 200,
+    width: 240,
     render: (ip, r) => (
       <Text copyable={{ text: ip }} style={{ fontSize: 13, maxWidth: '100%' }}>
-        <span className="mono">{ip}</span>{' '}
-        <Text type="secondary" style={{ fontSize: 12 }}>{r.country}</Text>
+        <span className="mono">{ip}</span>
+        <Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12, lineHeight: 1.5 }}>
+          {r.addr || r.country}
+        </Text>
       </Text>
     ),
   },

@@ -28,9 +28,9 @@ export default function Security() {
   const threatColor = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' }[threatLevel];
 
   return (
-    <div>
+    <div className="page-stack">
       <Alert
-        style={{ marginBottom: 16, borderRadius: 12 }}
+        style={{ borderRadius: 12 }}
         type={threatLevel === 'low' ? 'success' : threatLevel === 'medium' ? 'warning' : 'error'}
         showIcon
         message={
@@ -41,7 +41,18 @@ export default function Security() {
               : `警告：近 ${sec?.rangeHours} 小时内 ${fmtNum(sec?.rejected)} 次连接被拒绝，可能存在扫描或爆破行为`
         }
       />
+      {/* KPI 指标：按重要性排序 威胁等级 > 被拒绝连接 > 涉及来源 IP */}
       <Row gutter={[16, 16]}>
+        <Col xs={24} sm={8}>
+          <ProCard className="monitor-card hero-card" loading={loading && !sec} bodyStyle={{ padding: 0 }}>
+            <HeroStat
+              title="威胁等级"
+              value={threatText}
+              color={threatColor}
+              sub={`近 ${sec?.rangeHours ?? hours} 小时评估`}
+            />
+          </ProCard>
+        </Col>
         <Col xs={24} sm={8}>
           <ProCard className="monitor-card hero-card" loading={loading && !sec} bodyStyle={{ padding: 0 }}>
             <HeroStat
@@ -61,19 +72,9 @@ export default function Security() {
             />
           </ProCard>
         </Col>
-        <Col xs={24} sm={8}>
-          <ProCard className="monitor-card hero-card" loading={loading && !sec} bodyStyle={{ padding: 0 }}>
-            <HeroStat
-              title="威胁等级"
-              value={threatText}
-              color={threatColor}
-              sub={`近 ${sec?.rangeHours ?? hours} 小时评估`}
-            />
-          </ProCard>
-        </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
           <ProCard className="monitor-card" title="被拒次数最多的 IP" loading={loading && !sec}>
             <TopNList items={sec?.topIps} loading={loading && !sec} />
@@ -100,7 +101,7 @@ export default function Security() {
         </Col>
       </Row>
 
-      <ProCard className="monitor-card" title="最近被拒绝的请求" style={{ marginTop: 16 }} bodyStyle={{ padding: 0 }}>
+      <ProCard className="monitor-card" title="最近被拒绝的请求" bodyStyle={{ padding: 0 }}>
         <EventsTable events={sec?.recent || []} loading={loading && !sec} />
       </ProCard>
     </div>

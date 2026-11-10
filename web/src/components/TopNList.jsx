@@ -20,13 +20,9 @@ export default function TopNList({ items, loading, renderKey, max = 10 }) {
   return (
     <div style={{ paddingTop: 4 }}>
       {list.map((it, i) => (
-        <div
-          key={it.key}
-          className="anim-enter"
-          style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}
-        >
+        <div key={it.key} className="anim-enter topn-item">
           <span className={`rank-badge ${i < 3 ? `top${i + 1}` : ''}`}>{i + 1}</span>
-          <div style={{ width: 190, flexShrink: 0, overflow: 'hidden' }}>
+          <div className="topn-key">
             <Tooltip title={it.key}>
               <Text ellipsis style={{ display: 'block', fontSize: 13 }} className={/^[\d.]+$/.test(it.key) ? 'mono' : ''}>
                 {renderKey ? renderKey(it) : it.key}
@@ -40,18 +36,10 @@ export default function TopNList({ items, loading, renderKey, max = 10 }) {
               </Tooltip>
             ) : null}
           </div>
-          <div style={{ flex: 1, height: 8, background: '#f0f1f3', borderRadius: 6, overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${(it.count / top) * 100}%`,
-                height: '100%',
-                borderRadius: 6,
-                background: 'linear-gradient(90deg, #95de64, #52c41a)',
-                transition: 'width 0.6s cubic-bezier(0.22, 0.61, 0.36, 1)',
-              }}
-            />
+          <div className="topn-track">
+            <div className="topn-bar" style={{ width: `${(it.count / top) * 100}%` }} />
           </div>
-          <Text type="secondary" style={{ width: 78, textAlign: 'right', fontSize: 12, flexShrink: 0 }}>
+          <Text type="secondary" className="topn-count">
             {it.count} · {((it.count / total) * 100).toFixed(0)}%
           </Text>
         </div>

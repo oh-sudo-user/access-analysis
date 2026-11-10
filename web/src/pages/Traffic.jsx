@@ -1,10 +1,42 @@
 import React, { useState } from 'react';
-import { Col, Row } from 'antd';
+import { Col, Row, Table, Typography } from 'antd';
 import { ProCard } from '@ant-design/pro-components';
 import { api } from '../api';
-import { useMonitor, usePoll, bucketSize, fmtBytes } from '../monitor';
+import { useMonitor, usePoll, bucketSize, fmtBytes, fmtNum } from '../monitor';
 import { TrafficArea, ShareDonut } from '../components/charts';
 import HeroStat from '../components/HeroStat';
+
+const { Text } = Typography;
+
+const userColumns = [
+  {
+    title: '用户',
+    dataIndex: 'key',
+    ellipsis: true,
+    render: (k) => <Text className="mono" style={{ fontSize: 13 }}>{k}</Text>,
+  },
+  {
+    title: '连接数',
+    dataIndex: 'count',
+    width: 110,
+    align: 'right',
+    render: (v) => <span className="mono">{fmtNum(v)}</span>,
+  },
+  {
+    title: '占比',
+    dataIndex: 'share',
+    width: 100,
+    align: 'right',
+    render: (v) => <span className="mono">{(v * 100).toFixed(1)}%</span>,
+  },
+  {
+    title: '估算流量',
+    dataIndex: 'bytes',
+    width: 130,
+    align: 'right',
+    render: (v) => <span className="mono">{fmtBytes(v)}</span>,
+  },
+];
 
 export default function Traffic() {
   const { hours } = useMonitor();
@@ -34,7 +66,8 @@ export default function Traffic() {
   const txSpark = series.map((b) => b.tx / 1048576);
 
   return (
-    <div>
+    <div className="page-stack">
+      {/* KPI 指标：总流量 > 下载 > 上传 */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={8}>
           <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
@@ -72,53 +105,38 @@ export default function Traffic() {
         </Col>
       </Row>
 
-      <ProCard className="monitor-card" title="流量趋势（MB）" style={{ marginTop: 16 }} bodyStyle={{ paddingTop: 12 }}>
+      {/* 核心趋势 */}
+      <ProCard className="monitor-card" title="流量趋势（MB）" bodyStyle={{ paddingTop: 12 }}>
         <TrafficArea buckets={series} hours={hours} height={320} />
       </ProCard>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} lg={10}>
+      {/* 用户维度：明细表 + 占比图（各占 50%，边界对齐） */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <ProCard
+            className="monitor-card"
+            title="用户明细（估算）"
+            loading={loading && users.length === 0}
+            bodyStyle={{ padding: 0 }}
+          >
+            <Table
+              rowKey="key"
+              columns={userColumns}
+              dataSource={users}
+              size="small"
+              tableLayout="fixed"
+              pagination={false}
+            />
+          </ProCard>
+        </Col>
+        <Col xs={24} lg={12}>
           <ProCard className="monitor-card" title="用户流量占比（估算）" loading={loading && users.length === 0}>
             {users.length ? (
               <ShareDonut items={users} height={320} />
             ) : null}
           </ProCard>
         </Col>
-        <Col xs={24} lg={14}>
-          <ProCard className="monitor-card" title="用户明细（估算）" loading={loading && users.length === 0} bodyStyle={{ padding: 0 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #f0f1f3' }}>
-                  <th style={thStyle}>用户</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>连接数</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>占比</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>估算流量</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => (
-                  <tr key={u.key} style={{ borderBottom: '1px solid #f7f8fa' }}>
-                    <td style={tdStyle}>{u.key}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }} className="mono">{u.count}</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }} className="mono">{(u.share * 100).toFixed(1)}%</td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }} className="mono">{fmtBytes(u.bytes)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ProCard>
-        </Col>
       </Row>
     </div>
   );
 }
-
-const thStyle = {
-  textAlign: 'left',
-  padding: '12px 16px',
-  fontSize: 12,
-  color: '#667085',
-  fontWeight: 600,
-  background: '#fafbfc',
-};
-const tdStyle = { padding: '12px 16px', fontSize: 13 };

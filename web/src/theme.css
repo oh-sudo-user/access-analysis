@@ -137,8 +137,9 @@ body {
 .top-bar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   white-space: nowrap;
 }
 
@@ -336,6 +337,138 @@ body {
   padding: 16px 0 8px;
 }
 
+/* ---------- page layout: every page follows the same vertical rhythm ----------
+   KPI cards -> core trend -> rankings/distribution -> detail tables.
+   .page-stack gives direct children a uniform 16px gap, replacing
+   scattered inline marginTop styles. */
+.page-stack > * + * {
+  margin-top: 16px;
+}
+
+/* cards in the same row stretch to equal height so their borders align */
+.page-stack .ant-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-stack .ant-col > .monitor-card {
+  flex: 1;
+}
+
+/* ---------- info list item (label: value rows) ---------- */
+.info-item {
+  display: flex;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f7f8fa;
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-item-label {
+  font-size: 12.5px;
+  color: #667085;
+  width: 84px;
+  flex-shrink: 0;
+}
+
+.info-item-value {
+  font-size: 13px;
+  color: #101828;
+  word-break: break-all;
+  min-width: 0;
+}
+
+/* ---------- resource usage row (label + progress bar) ---------- */
+.usage-row {
+  margin-bottom: 16px;
+}
+
+.usage-row:last-child {
+  margin-bottom: 0;
+}
+
+.usage-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.usage-row-fill {
+  flex: 1;
+}
+
+/* ---------- user profile entries (clients page) ---------- */
+.profile-item {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f7f8fa;
+}
+
+.profile-item:last-child {
+  border-bottom: none;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- top-N list rows ---------- */
+.topn-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.topn-item:last-child {
+  margin-bottom: 0;
+}
+
+.topn-key {
+  width: 190px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.topn-track {
+  flex: 1;
+  height: 8px;
+  background: #f0f1f3;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.topn-bar {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #95de64, #52c41a);
+  transition: width 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.topn-count {
+  width: 78px;
+  text-align: right;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .topn-key {
+    width: 132px;
+  }
+
+  .topn-count {
+    width: 66px;
+  }
+}
+
 .logs-toolbar {
   display: flex;
   align-items: center;
@@ -350,11 +483,6 @@ body {
 }
 
 /* ---------- tables: breathing room, never break out of the card ---------- */
-.ant-table {
-  width: 100%;
-  table-layout: fixed;
-}
-
 .ant-table-thead > tr > th,
 .ant-table-tbody > tr > td {
   padding-left: 20px !important;

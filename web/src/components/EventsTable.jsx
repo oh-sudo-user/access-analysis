@@ -60,6 +60,7 @@ export const eventColumns = [
 ];
 
 export default function EventsTable({ events, loading, size = 'small', showPagination = false }) {
+  const hasData = !!(events && events.length);
   return (
     <Table
       rowKey={(r) => `${r.t}-${r.ip}-${r.host}-${r.dport || 0}-${r.action}`}
@@ -68,7 +69,8 @@ export default function EventsTable({ events, loading, size = 'small', showPagin
       size={size}
       loading={loading}
       tableLayout="fixed"
-      scroll={{ x: 'max-content' }}
+      // 仅在真有数据时才允许横向滚动，避免空表时 max-content 撑出滚动条
+      scroll={hasData ? { x: 'max-content' } : undefined}
       pagination={showPagination ? { pageSize: 20, size: 'small', showSizeChanger: false } : false}
     />
   );

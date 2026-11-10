@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Col, Progress, Row, Tag, Tooltip, Typography } from 'antd';
+import { Col, Progress, Row, Table, Tag, Tooltip, Typography } from 'antd';
 import { ProCard } from '@ant-design/pro-components';
 import { api } from '../api';
 import { useMonitor, usePoll, fmtBytes, fmtNum, timeAgo } from '../monitor';
@@ -25,11 +25,11 @@ function levelColor(pct) {
 
 function UsageRow({ label, sub, pct, text, color }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
+    <div className="usage-row">
+      <div className="usage-row-head">
         <Text style={{ fontSize: 13 }}>{label}</Text>
         {sub ? <Text type="secondary" style={{ fontSize: 12 }}>{sub}</Text> : null}
-        <span style={{ flex: 1 }} />
+        <span className="usage-row-fill" />
         <Text className="mono" style={{ fontSize: 12.5, color: color || '#101828' }}>{text}</Text>
       </div>
       <Progress
@@ -45,12 +45,45 @@ function UsageRow({ label, sub, pct, text, color }) {
 
 function InfoItem({ label, children }) {
   return (
-    <div style={{ display: 'flex', gap: 10, padding: '7px 0', borderBottom: '1px solid #f7f8fa' }}>
-      <Text type="secondary" style={{ fontSize: 12.5, width: 84, flexShrink: 0 }}>{label}</Text>
-      <Text style={{ fontSize: 13, wordBreak: 'break-all' }}>{children}</Text>
+    <div className="info-item">
+      <span className="info-item-label">{label}</span>
+      <span className="info-item-value">{children}</span>
     </div>
   );
 }
+
+const diskColumns = [
+  {
+    title: '挂载点',
+    dataIndex: 'mount',
+    ellipsis: true,
+    render: (v) => <span className="mono">{v}</span>,
+  },
+  {
+    title: '设备',
+    dataIndex: 'device',
+    width: 110,
+    render: (v) => <span className="mono" style={{ fontSize: 12, color: '#667085' }}>{v}</span>,
+  },
+  {
+    title: '已用 / 总量',
+    key: 'used',
+    width: 190,
+    align: 'right',
+    render: (_, d) => (
+      <span className="mono" style={{ whiteSpace: 'nowrap' }}>
+        {fmtBytes(d.used)} / {fmtBytes(d.total)}
+      </span>
+    ),
+  },
+  {
+    title: '使用率',
+    dataIndex: 'usagePct',
+    width: 100,
+    align: 'right',
+    render: (v) => <span className="mono" style={{ color: levelColor(v) }}>{v.toFixed(1)}%</span>,
+  },
+];
 
 export default function Server() {
   const { tickAt } = useMonitor();
@@ -81,7 +114,8 @@ export default function Server() {
   const monthPct = net?.monthUsagePct ?? 0;
 
   return (
-    <div>
+    <div className="page-stack">
+      {/* KPI 指标：CPU > 内存 > 磁盘 > 流量配额 */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <ProCard className="monitor-card hero-card" loading={loading && !info} bodyStyle={{ padding: 0 }}>
@@ -135,8 +169,9 @@ export default function Server() {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} xl={10}>
+      {/* 实时监控区：资源明细 + 网络流量（各占 50%，边界对齐） */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={12}>
           <ProCard className="monitor-card" title="资源使用" loading={loading && !info}>
             <UsageRow
               label="CPU"
@@ -175,7 +210,44 @@ export default function Server() {
           </ProCard>
         </Col>
 
-        <Col xs={24} xl={14}>
+        <Col xs={24} xl={12}>
+          <ProCard className="monitor-card" title="网络流量" loading={loading && !info}>
+            <InfoItem label="接口">{net?.iface || '—'}</InfoItem>
+            <InfoItem label="实时下行">{`${fmtNum(Math.round((net?.rxRate || 0) * 8))} Kbps`}</InfoItem>
+            <InfoItem label="实时上行">{`${fmtNum(Math.round((net?.txRate || 0) * 8))} Kbps`}</InfoItem>
+            <InfoItem label="累计下行">{fmtBytes(net?.rxTotal)}</InfoItem>
+            <InfoItem label="累计上行">{fmtBytes(net?.txTotal)}</InfoItem>
+            <InfoItem label="本月用量">
+              {`${fmtBytes(net?.monthUsed)}（下行 ${fmtBytes(net?.monthRx)} · 上行 ${fmtBytes(net?.monthTx)}）`}
+            </InfoItem>
+            <InfoItem label="流量配额">
+              {hasQuota ? `${net.quotaGB} GB · 剩余 ${fmtBytes(net?.remaining)}` : '未配置（config.json 的 trafficQuotaGB）'}
+            </InfoItem>
+            <div style={{ marginTop: 10 }}>
+              <Text type="secondary" style={{ fontSize: 11.5 }}>
+                采集于 {tickAt ? timeAgo(tickAt) : '—'} · CPU / 网络为 5 秒采样瞬时值
+              </Text>
+            </div>
+          </ProCard>
+        </Col>
+      </Row>
+
+      {/* 静态信息区：磁盘分区 + 系统信息 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={12}>
+          <ProCard className="monitor-card" title="磁盘分区" loading={loading && !info} bodyStyle={{ padding: 0 }}>
+            <Table
+              rowKey={(d) => `${d.device}-${d.mount}`}
+              columns={diskColumns}
+              dataSource={disk?.items || []}
+              size="small"
+              tableLayout="fixed"
+              pagination={false}
+            />
+          </ProCard>
+        </Col>
+
+        <Col xs={24} xl={12}>
           <ProCard className="monitor-card" title="系统信息" loading={loading && !info}>
             <Row gutter={[24, 0]}>
               <Col xs={24} md={12}>
@@ -210,74 +282,6 @@ export default function Server() {
           </ProCard>
         </Col>
       </Row>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} xl={12}>
-          <ProCard className="monitor-card" title="磁盘分区" loading={loading && !info} bodyStyle={{ padding: 0 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #f0f1f3' }}>
-                  <th style={thStyle}>挂载点</th>
-                  <th style={thStyle}>设备</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>已用 / 总量</th>
-                  <th style={{ ...thStyle, textAlign: 'right' }}>使用率</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(disk?.items || []).map((d) => (
-                  <tr key={`${d.device}-${d.mount}`} style={{ borderBottom: '1px solid #f7f8fa' }}>
-                    <td style={tdStyle}>
-                      <span className="mono">{d.mount}</span>
-                    </td>
-                    <td style={{ ...tdStyle, color: '#667085' }}>
-                      <span className="mono" style={{ fontSize: 12 }}>{d.device}</span>
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }} className="mono">
-                      {fmtBytes(d.used)} / {fmtBytes(d.total)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right' }}>
-                      <span className="mono" style={{ color: levelColor(d.usagePct) }}>
-                        {d.usagePct.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </ProCard>
-        </Col>
-
-        <Col xs={24} xl={12}>
-          <ProCard className="monitor-card" title="网络流量" loading={loading && !info}>
-            <InfoItem label="接口">{net?.iface || '—'}</InfoItem>
-            <InfoItem label="实时下行">{`${fmtNum(Math.round((net?.rxRate || 0) * 8))} Kbps`}</InfoItem>
-            <InfoItem label="实时上行">{`${fmtNum(Math.round((net?.txRate || 0) * 8))} Kbps`}</InfoItem>
-            <InfoItem label="累计下行">{fmtBytes(net?.rxTotal)}</InfoItem>
-            <InfoItem label="累计上行">{fmtBytes(net?.txTotal)}</InfoItem>
-            <InfoItem label="本月用量">
-              {`${fmtBytes(net?.monthUsed)}（下行 ${fmtBytes(net?.monthRx)} · 上行 ${fmtBytes(net?.monthTx)}）`}
-            </InfoItem>
-            <InfoItem label="流量配额">
-              {hasQuota ? `${net.quotaGB} GB · 剩余 ${fmtBytes(net?.remaining)}` : '未配置（config.json 的 trafficQuotaGB）'}
-            </InfoItem>
-            <div style={{ marginTop: 10 }}>
-              <Text type="secondary" style={{ fontSize: 11.5 }}>
-                采集于 {tickAt ? timeAgo(tickAt) : '—'} · CPU / 网络为 5 秒采样瞬时值
-              </Text>
-            </div>
-          </ProCard>
-        </Col>
-      </Row>
     </div>
   );
 }
-
-const thStyle = {
-  textAlign: 'left',
-  padding: '12px 16px',
-  fontSize: 12,
-  color: '#667085',
-  fontWeight: 600,
-  background: '#fafbfc',
-};
-const tdStyle = { padding: '12px 16px', fontSize: 13 };

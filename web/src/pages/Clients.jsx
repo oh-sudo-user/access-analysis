@@ -10,8 +10,8 @@ const { Text } = Typography;
 
 function UserProfileCard({ user }) {
   return (
-    <div style={{ padding: '14px 16px', borderBottom: '1px solid #f7f8fa' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+    <div className="profile-item">
+      <div className="profile-head">
         <Tag color="green" style={{ marginRight: 0 }}>VLESS</Tag>
         <Text strong className="mono" style={{ fontSize: 13 }}>{user.key}</Text>
         <Text type="secondary" style={{ fontSize: 12 }}>
@@ -65,27 +65,10 @@ export default function Clients() {
   }, [hours]);
 
   return (
-    <div>
+    <div className="page-stack">
+      {/* KPI 指标：按重要性排序 接入用户 > 独立客户端 > 目标域名 > 国家地区 */}
       <Row gutter={[16, 16]}>
-        <Col xs={12} lg={6}>
-          <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
-            <HeroStat
-              title="独立客户端"
-              value={ov?.uniqueClients ?? 0}
-              sub={`热门 IP ${ips.length ? ips[0].key : '—'}`}
-            />
-          </ProCard>
-        </Col>
-        <Col xs={12} lg={6}>
-          <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
-            <HeroStat
-              title="覆盖国家/地区"
-              value={countries.length}
-              sub={countries[0] ? `${flagEmoji(countries[0].key)} ${countries[0].name} 最多` : '暂无数据'}
-            />
-          </ProCard>
-        </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={24} sm={12} xl={6}>
           <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
             <HeroStat
               title="接入用户"
@@ -94,7 +77,16 @@ export default function Clients() {
             />
           </ProCard>
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={24} sm={12} xl={6}>
+          <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
+            <HeroStat
+              title="独立客户端"
+              value={ov?.uniqueClients ?? 0}
+              sub={`热门 IP ${ips.length ? ips[0].key : '—'}`}
+            />
+          </ProCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
           <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
             <HeroStat
               title="访问目标域名"
@@ -103,9 +95,33 @@ export default function Clients() {
             />
           </ProCard>
         </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
+            <HeroStat
+              title="覆盖国家/地区"
+              value={countries.length}
+              sub={countries[0] ? `${flagEmoji(countries[0].key)} ${countries[0].name} 最多` : '暂无数据'}
+            />
+          </ProCard>
+        </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      {/* 排行分布：接入用户 > 客户端 IP > 国家地区 > 传输协议 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={12}>
+          <ProCard className="monitor-card" title="接入用户" loading={loading && users.length === 0}>
+            <TopNList
+              items={users}
+              loading={loading && users.length === 0}
+              renderKey={(it) => (
+                <span>
+                  <Tag color="green" style={{ marginRight: 6 }}>VLESS</Tag>
+                  <Text className="mono" style={{ fontSize: 12.5 }}>{it.key}</Text>
+                </span>
+              )}
+            />
+          </ProCard>
+        </Col>
         <Col xs={24} lg={12}>
           <ProCard className="monitor-card" title="热门客户端 IP" loading={loading && ips.length === 0}>
             <TopNList items={ips} loading={loading && ips.length === 0} />
@@ -126,30 +142,16 @@ export default function Clients() {
           </ProCard>
         </Col>
         <Col xs={24} lg={12}>
-          <ProCard className="monitor-card" title="接入用户" loading={loading && users.length === 0}>
-            <TopNList
-              items={users}
-              loading={loading && users.length === 0}
-              renderKey={(it) => (
-                <span>
-                  <Tag color="green" style={{ marginRight: 6 }}>VLESS</Tag>
-                  <Text className="mono" style={{ fontSize: 12.5 }}>{it.key}</Text>
-                </span>
-              )}
-            />
-          </ProCard>
-        </Col>
-        <Col xs={24} lg={12}>
           <ProCard className="monitor-card" title="传输协议" loading={loading && transport.length === 0}>
             <TopNList items={transport} loading={loading && transport.length === 0} />
           </ProCard>
         </Col>
       </Row>
 
+      {/* 明细：用户访问画像 */}
       <ProCard
         className="monitor-card"
         title="用户访问画像（常访问网站 / IP Top 10）"
-        style={{ marginTop: 16 }}
         loading={loading && profiles.length === 0}
         bodyStyle={{ padding: 0 }}
       >

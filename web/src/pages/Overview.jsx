@@ -51,7 +51,7 @@ export default function Overview() {
   const lastEvent = events.length ? events[0] : null;
 
   return (
-    <div>
+    <div className="page-stack">
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <ProCard className="monitor-card hero-card" loading={loading && !ov} bodyStyle={{ padding: 0 }}>
@@ -121,7 +121,6 @@ export default function Overview() {
 
       <ProCard
         className="monitor-card"
-        style={{ marginTop: 16 }}
         bodyStyle={{ paddingTop: 12 }}
         title={
           <span>
@@ -152,7 +151,17 @@ export default function Overview() {
           : <ResultColumn buckets={series} hours={hours} height={300} />}
       </ProCard>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} lg={8}>
+          <ProCard className="monitor-card" title="热门目标域名" loading={loading && domains.length === 0}>
+            <TopNList items={domains} loading={loading && domains.length === 0} />
+          </ProCard>
+        </Col>
+        <Col xs={24} lg={8}>
+          <ProCard className="monitor-card" title="热门客户端 IP" loading={loading && ips.length === 0}>
+            <TopNList items={ips} loading={loading && ips.length === 0} />
+          </ProCard>
+        </Col>
         <Col xs={24} lg={8}>
           <ProCard className="monitor-card" title="国家 / 地区" loading={loading && countries.length === 0}>
             <TopNList
@@ -167,19 +176,9 @@ export default function Overview() {
             />
           </ProCard>
         </Col>
-        <Col xs={24} lg={8}>
-          <ProCard className="monitor-card" title="热门目标域名" loading={loading && domains.length === 0}>
-            <TopNList items={domains} loading={loading && domains.length === 0} />
-          </ProCard>
-        </Col>
-        <Col xs={24} lg={8}>
-          <ProCard className="monitor-card" title="热门客户端 IP" loading={loading && ips.length === 0}>
-            <TopNList items={ips} loading={loading && ips.length === 0} />
-          </ProCard>
-        </Col>
       </Row>
 
-      <ProCard className="monitor-card" title="最近请求" style={{ marginTop: 16 }} bodyStyle={{ padding: 0 }}>
+      <ProCard className="monitor-card" title="最近请求" bodyStyle={{ padding: 0 }}>
         <EventsTable events={events} loading={loading && events.length === 0} />
       </ProCard>
     </div>

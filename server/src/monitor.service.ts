@@ -3,9 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { config } from './config';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const geoip = require('geoip-country');
-
 export interface AccessEvent {
   t: number;
   ip: string;
@@ -47,44 +44,137 @@ function parseTs(s: string): number {
   return t.getTime();
 }
 
-function lookupCountry(ip: string): string {
-  try {
-    const c = geoip.lookup(ip);
-    return (c && c.country) || 'ZZ';
-  } catch {
-    return 'ZZ';
-  }
-}
-
 export function countryName(code: string): string {
   return COUNTRY_NAMES[code] || code || '未知';
 }
 
-// ---------- 地市级地址解析（离线 ip2region） ----------
+// ---------- IP 归属地解析（在线 ip-api.com + 磁盘缓存） ----------
 
-interface Ip2RegionLike {
-  search(ip: string): { country: string; province: string; city: string; isp: string } | null;
+interface GeoInfo {
+  cc: string;
+  country: string;
+  region: string;
+  city: string;
+  isp?: string;
 }
 
-let ip2: Ip2RegionLike | null = null;
-let ip2Failed = false;
-
-function getIp2Region(): Ip2RegionLike | null {
-  if (ip2 || ip2Failed) return ip2;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Ip2Region = require('ip2region').default;
-    ip2 = new Ip2Region();
-  } catch {
-    ip2Failed = true;
-  }
-  return ip2;
-}
+// 免费版限制 45 请求/分钟；批量接口单次最多 100 个 IP，2 秒一批即 30 请求/分钟
+const GEO_API =
+  'http://ip-api.com/batch?fields=query,status,message,countryCode,country,regionName,city,isp&lang=zh-CN';
+const GEO_BATCH_INTERVAL = 2000;
+const GEO_BATCH_SIZE = 100;
 
 const PRIVATE_RE =
   /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|fc|fd|fe80)/i;
 
-const addrCache = new Map<string, string>();
+/**
+ * 异步批量解析 IP 归属地：查询只读缓存（同步返回），未命中的 IP 进入队列，
+ * 由后台定时器按限速批量请求 ip-api.com 并写入磁盘缓存，下一轮轮询自动补全。
+ */
+class GeoResolver {
+  private cache = new Map<string, GeoInfo>();
+  private pending = new Set<string>();
+  private attempts = new Map<string, number>();
+  private timer: NodeJS.Timeout | null = null;
+  private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+  private readonly cacheFile: string;
+
+  constructor(dataDir: string, private readonly logger: Logger) {
+    this.cacheFile = path.join(dataDir, 'ip-geo-cache.json');
+    this.load();
+  }
+
+  start() {
+    this.timer = setInterval(() => void this.drain(), GEO_BATCH_INTERVAL);
+    this.saveTimer = setInterval(() => this.flush(), 60000);
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.saveTimer) clearInterval(this.saveTimer);
+    this.flush();
+  }
+
+  private load() {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
+      for (const [ip, info] of Object.entries(raw || {})) {
+        this.cache.set(ip, info as GeoInfo);
+      }
+      this.logger.log(`geo cache loaded: ${this.cache.size} entries`);
+    } catch {
+      // 首次运行无缓存文件
+    }
+  }
+
+  private flush() {
+    if (!this.dirty) return;
+    try {
+      fs.writeFileSync(this.cacheFile, JSON.stringify(Object.fromEntries(this.cache)));
+      this.dirty = false;
+    } catch {
+      // 缓存写失败不影响主流程
+    }
+  }
+
+  /** 同步读取缓存；未命中则把 IP 加入待解析队列 */
+  get(ip: string): GeoInfo | null {
+    const hit = this.cache.get(ip);
+    if (hit) return hit;
+    this.pending.add(ip);
+    return null;
+  }
+
+  private async drain() {
+    if (!this.pending.size) return;
+    const ips = [...this.pending].slice(0, GEO_BATCH_SIZE);
+    try {
+      const res = await fetch(GEO_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ips),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const list = (await res.json()) as Array<Record<string, unknown>>;
+      const byQuery = new Map(list.map((x) => [String(x.query), x]));
+      for (const ip of ips) {
+        this.pending.delete(ip);
+        const row = byQuery.get(ip) || {};
+        const ok = row.status === 'success' && (row.country || row.countryCode);
+        if (ok) {
+          this.cache.set(ip, {
+            cc: String(row.countryCode || 'ZZ'),
+            country: String(row.country || ''),
+            region: String(row.regionName || ''),
+            city: String(row.city || ''),
+            isp: String(row.isp || ''),
+          });
+          this.attempts.delete(ip);
+          this.dirty = true;
+          continue;
+        }
+        const msg = String(row.message || '');
+        const permanent = /reserved|private|invalid/i.test(msg);
+        const tries = (this.attempts.get(ip) || 0) + 1;
+        if (permanent || tries >= 3) {
+          this.cache.set(ip, { cc: 'ZZ', country: '', region: '', city: '' });
+          this.attempts.delete(ip);
+          this.dirty = true;
+        } else {
+          this.attempts.set(ip, tries);
+          this.pending.add(ip);
+        }
+      }
+      // 每批解析完立即落盘，避免进程异常退出丢失缓存
+      this.flush();
+    } catch (e) {
+      // 网络异常：IP 保留在队列中，靠定时间隔自然退避重试
+      this.logger.warn(`geo batch failed: ${(e as Error).message}`);
+    }
+  }
+}
 
 function joinAddr(country: string, province: string, city: string): string {
   const parts: string[] = [];
@@ -94,34 +184,6 @@ function joinAddr(country: string, province: string, city: string): string {
   if (prov) parts.push(prov);
   if (city) parts.push(city);
   return parts.join(' ');
-}
-
-/** IP → "中国 浙江省 杭州市" 形式的地址；无城市数据时退化为国家/省级 */
-export function lookupAddr(ip: string): string {
-  if (!ip) return '未知';
-  const cached = addrCache.get(ip);
-  if (cached) return cached;
-  let addr: string;
-  if (PRIVATE_RE.test(ip)) {
-    addr = '内网 IP';
-  } else {
-    const q = getIp2Region();
-    let res: ReturnType<Ip2RegionLike['search']> = null;
-    try {
-      res = q ? q.search(ip) : null;
-    } catch {
-      res = null;
-    }
-    if (res && (res.country || res.province || res.city)) {
-      addr = joinAddr(res.country || countryName(lookupCountry(ip)), res.province, res.city);
-    } else {
-      const code = lookupCountry(ip);
-      addr = code === 'ZZ' ? '未知' : countryName(code);
-    }
-  }
-  if (addrCache.size > 50000) addrCache.clear();
-  addrCache.set(ip, addr);
-  return addr;
 }
 
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
@@ -151,8 +213,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
   netIface: string | null = null;
 
   private recentOuter: Array<{ t: number; ip: string }> = [];
+  private geo: GeoResolver | null = null;
 
   onModuleInit() {
+    this.geo = new GeoResolver(config.dataDir, this.logger);
+    this.geo.start();
     this.replayToday();
     this.tailInit();
     this.startTailer();
@@ -166,7 +231,30 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     for (const t of [this.tailTimer, this.stateTimer, this.trafficTimer]) {
       if (t) clearInterval(t);
     }
+    if (this.geo) this.geo.stop();
     if (this.writer) this.writer.end();
+  }
+
+  // ---------- IP 归属地（在线解析，同步读缓存） ----------
+
+  private geoAddr(ip: string): string {
+    if (!ip) return '未知';
+    if (PRIVATE_RE.test(ip)) return '内网 IP';
+    const g = this.geo ? this.geo.get(ip) : null;
+    if (!g) return '解析中';
+    return joinAddr(g.country, g.region, g.city) || '未知';
+  }
+
+  private geoCode(ip: string, fallback: string): string {
+    if (!ip || PRIVATE_RE.test(ip)) return fallback || 'ZZ';
+    return (this.geo ? this.geo.get(ip) : null)?.cc || fallback || 'ZZ';
+  }
+
+  private geoCountryLabel(ip: string, fallbackCode: string): string {
+    if (!ip || PRIVATE_RE.test(ip)) return '内网';
+    const g = this.geo ? this.geo.get(ip) : null;
+    if (g && g.country) return g.country;
+    return COUNTRY_NAMES[fallbackCode] || fallbackCode || '未知';
   }
 
   // ---------- persistence ----------
@@ -195,7 +283,6 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       if (!line.trim()) continue;
       try {
         const ev = JSON.parse(line) as AccessEvent;
-        if (!ev.country) ev.country = lookupCountry(ev.ip);
         this.events.push(ev);
       } catch {
         // skip corrupt line
@@ -235,7 +322,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       transport,
       tag: (m[9] || '').split(/->|>>/)[0].trim(),
       email: m[10] || '',
-      country: lookupCountry(ip),
+      country: this.geoCode(ip, ''),
     };
   }
 
@@ -529,7 +616,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
           key = ev.ip;
           break;
         case 'country':
-          key = countryName(ev.country);
+          key = this.geoCountryLabel(ev.ip, ev.country);
           break;
         case 'user':
           key = ev.email || '(匿名)';
@@ -550,7 +637,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     }
     const items = [...map.values()].sort((a, b) => b.count - a.count).slice(0, limit);
     if (dim === 'ip') {
-      return items.map((x) => ({ ...x, addr: lookupAddr(x.key) }));
+      return items.map((x) => ({ ...x, addr: this.geoAddr(x.key) }));
     }
     return items;
   }
@@ -560,10 +647,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     const map = new Map<string, { key: string; count: number; rejected: number }>();
     for (let i = this.indexOfFirst(from); i < this.events.length; i++) {
       const ev = this.events[i];
-      const cur = map.get(ev.country) || { key: ev.country, count: 0, rejected: 0 };
+      const code = this.geoCode(ev.ip, ev.country);
+      const cur = map.get(code) || { key: code, count: 0, rejected: 0 };
       cur.count++;
       if (ev.action !== 'accepted') cur.rejected++;
-      map.set(ev.country, cur);
+      map.set(code, cur);
     }
     return [...map.values()]
       .sort((a, b) => b.count - a.count)
@@ -578,7 +666,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       const ev = this.events[i];
       if (ev.t < from) break;
       if (action && ev.action !== action) continue;
-      out.push({ ...ev, addr: lookupAddr(ev.ip) });
+      out.push({ ...ev, addr: this.geoAddr(ev.ip) });
     }
     return out;
   }
@@ -595,13 +683,14 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       if (ev.action !== 'rejected') continue;
       rejected++;
       ipMap.set(ev.ip, (ipMap.get(ev.ip) || 0) + 1);
-      countryMap.set(ev.country, (countryMap.get(ev.country) || 0) + 1);
+      const code = this.geoCode(ev.ip, ev.country);
+      countryMap.set(code, (countryMap.get(code) || 0) + 1);
       targets.set(ev.host, (targets.get(ev.host) || 0) + 1);
     }
     for (let i = this.events.length - 1; i >= 0 && recent.length < 50; i--) {
       const ev = this.events[i];
       if (ev.t < from) break;
-      if (ev.action === 'rejected') recent.push({ ...ev, addr: lookupAddr(ev.ip) });
+      if (ev.action === 'rejected') recent.push({ ...ev, addr: this.geoAddr(ev.ip) });
     }
     const toArr = (m: Map<string, number>) =>
       [...m.entries()]
@@ -611,7 +700,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     return {
       rangeHours,
       rejected,
-      topIps: toArr(ipMap).map((x) => ({ ...x, addr: lookupAddr(x.key) })),
+      topIps: toArr(ipMap).map((x) => ({ ...x, addr: this.geoAddr(x.key) })),
       topCountries: toArr(countryMap).map((x) => ({ ...x, name: countryName(x.key) })),
       topTargets: toArr(targets),
       recent,
@@ -650,7 +739,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
         uniqueSites: u.sites.size,
         uniqueIps: u.ips.size,
         sites: topOf(u.sites),
-        ips: topOf(u.ips).map((x) => ({ ...x, addr: lookupAddr(x.key) })),
+        ips: topOf(u.ips).map((x) => ({ ...x, addr: this.geoAddr(x.key) })),
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, userLimit);

@@ -82,7 +82,7 @@ export default function Logs() {
       bodyStyle={{ padding: 0 }}
       extra={
         <Button danger icon={<DeleteOutlined />} loading={clearing} onClick={doClear}>
-          一键清理
+          清空日志
         </Button>
       }
     >

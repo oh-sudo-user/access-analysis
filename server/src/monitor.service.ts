@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as dns from 'dns';
 import { config } from './config';
 
 export interface AccessEvent {
@@ -14,6 +15,7 @@ export interface AccessEvent {
   email: string;
   country: string;
   addr?: string;
+  targetAddr?: string;
 }
 
 interface TrafficSample {
@@ -186,6 +188,98 @@ function joinAddr(country: string, province: string, city: string): string {
   return parts.join(' ');
 }
 
+// ---------- 目标域名 → IP 解析（DNS + 磁盘缓存） ----------
+
+const DNS_BATCH_INTERVAL = 3000;
+const DNS_BATCH_SIZE = 50;
+
+/**
+ * 目标多为域名，需先 DNS 解析出 IP 才能查归属地。
+ * 同步读缓存；未命中的域名进入待解析队列，由后台定时器批量 resolve，
+ * 解析出的 IP 再交给 GeoResolver 做归属地查询。解析失败记为空串，不再重试。
+ */
+class TargetResolver {
+  private cache = new Map<string, string>(); // domain -> ip（'' 表示解析失败/无记录）
+  private pending = new Set<string>();
+  private timer: NodeJS.Timeout | null = null;
+  private saveTimer: NodeJS.Timeout | null = null;
+  private dirty = false;
+  private readonly cacheFile: string;
+
+  constructor(
+    dataDir: string,
+    private readonly geo: GeoResolver,
+    private readonly logger: Logger,
+  ) {
+    this.cacheFile = path.join(dataDir, 'target-ip-cache.json');
+    this.load();
+  }
+
+  start() {
+    this.timer = setInterval(() => void this.drain(), DNS_BATCH_INTERVAL);
+    this.saveTimer = setInterval(() => this.flush(), 60000);
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.saveTimer) clearInterval(this.saveTimer);
+    this.flush();
+  }
+
+  private load() {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
+      for (const [d, ip] of Object.entries(raw || {})) {
+        const addr = ip as string;
+        this.cache.set(d, addr);
+        if (addr) this.geo.get(addr); // 预热：把已解析 IP 推入归属地队列
+      }
+      this.logger.log(`target dns cache loaded: ${this.cache.size} entries`);
+    } catch {
+      // 首次运行无缓存文件
+    }
+  }
+
+  private flush() {
+    if (!this.dirty) return;
+    try {
+      fs.writeFileSync(this.cacheFile, JSON.stringify(Object.fromEntries(this.cache)));
+      this.dirty = false;
+    } catch {
+      // 缓存写失败不影响主流程
+    }
+  }
+
+  /** 同步读取缓存；返回 ip（可能为 ''），未命中返回 null 并加入待解析队列 */
+  get(domain: string): string | null {
+    if (this.cache.has(domain)) return this.cache.get(domain) as string;
+    this.pending.add(domain);
+    return null;
+  }
+
+  private async drain() {
+    if (!this.pending.size) return;
+    const domains = [...this.pending].slice(0, DNS_BATCH_SIZE);
+    const results = await Promise.allSettled(
+      domains.map((d) => dns.promises.resolve4(d)),
+    );
+    for (let i = 0; i < domains.length; i++) {
+      const d = domains[i];
+      this.pending.delete(d);
+      const r = results[i];
+      if (r.status === 'fulfilled' && r.value.length) {
+        const ip = r.value[0];
+        this.cache.set(d, ip);
+        this.geo.get(ip); // 推入归属地解析队列
+      } else {
+        this.cache.set(d, ''); // 解析失败，标记为永久失败
+      }
+      this.dirty = true;
+    }
+    this.flush();
+  }
+}
+
 const IP_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 function normalizeHost(h: string | undefined): string | null {
@@ -214,10 +308,13 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
 
   private recentOuter: Array<{ t: number; ip: string }> = [];
   private geo: GeoResolver | null = null;
+  private targets: TargetResolver | null = null;
 
   onModuleInit() {
     this.geo = new GeoResolver(config.dataDir, this.logger);
     this.geo.start();
+    this.targets = new TargetResolver(config.dataDir, this.geo, this.logger);
+    this.targets.start();
     this.replayToday();
     this.tailInit();
     this.startTailer();
@@ -231,6 +328,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     for (const t of [this.tailTimer, this.stateTimer, this.trafficTimer]) {
       if (t) clearInterval(t);
     }
+    if (this.targets) this.targets.stop();
     if (this.geo) this.geo.stop();
     if (this.writer) this.writer.end();
   }
@@ -255,6 +353,16 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     const g = this.geo ? this.geo.get(ip) : null;
     if (g && g.country) return g.country;
     return COUNTRY_NAMES[fallbackCode] || fallbackCode || '未知';
+  }
+
+  /** 目标（域名或 IP）归属地：域名先 DNS 解析出 IP 再查归属地 */
+  private targetAddr(host: string): string {
+    if (!host || host === '(无目标)') return '';
+    if (IP_RE.test(host)) return this.geoAddr(host);
+    const ip = this.targets ? this.targets.get(host) : null;
+    if (ip === null) return '解析中';
+    if (!ip) return ''; // DNS 解析失败
+    return this.geoAddr(ip);
   }
 
   // ---------- persistence ----------
@@ -639,6 +747,9 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     if (dim === 'ip') {
       return items.map((x) => ({ ...x, addr: this.geoAddr(x.key) }));
     }
+    if (dim === 'domain') {
+      return items.map((x) => ({ ...x, addr: this.targetAddr(x.key) }));
+    }
     return items;
   }
 
@@ -666,7 +777,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       const ev = this.events[i];
       if (ev.t < from) break;
       if (action && ev.action !== action) continue;
-      out.push({ ...ev, addr: this.geoAddr(ev.ip) });
+      out.push({ ...ev, addr: this.geoAddr(ev.ip), targetAddr: this.targetAddr(ev.host) });
     }
     return out;
   }
@@ -690,7 +801,8 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     for (let i = this.events.length - 1; i >= 0 && recent.length < 50; i--) {
       const ev = this.events[i];
       if (ev.t < from) break;
-      if (ev.action === 'rejected') recent.push({ ...ev, addr: this.geoAddr(ev.ip) });
+      if (ev.action === 'rejected')
+        recent.push({ ...ev, addr: this.geoAddr(ev.ip), targetAddr: this.targetAddr(ev.host) });
     }
     const toArr = (m: Map<string, number>) =>
       [...m.entries()]
@@ -702,7 +814,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       rejected,
       topIps: toArr(ipMap).map((x) => ({ ...x, addr: this.geoAddr(x.key) })),
       topCountries: toArr(countryMap).map((x) => ({ ...x, name: countryName(x.key) })),
-      topTargets: toArr(targets),
+      topTargets: toArr(targets).map((x) => ({ ...x, addr: this.targetAddr(x.key) })),
       recent,
     };
   }
@@ -738,7 +850,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
         count: u.count,
         uniqueSites: u.sites.size,
         uniqueIps: u.ips.size,
-        sites: topOf(u.sites),
+        sites: topOf(u.sites).map((x) => ({ ...x, addr: this.targetAddr(x.key) })),
         ips: topOf(u.ips).map((x) => ({ ...x, addr: this.geoAddr(x.key) })),
       }))
       .sort((a, b) => b.count - a.count)

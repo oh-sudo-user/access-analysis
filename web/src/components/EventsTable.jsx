@@ -35,12 +35,23 @@ export const eventColumns = [
   {
     title: '目标',
     dataIndex: 'host',
-    ellipsis: true,
+    width: 240,
     render: (h, r) => (
-      <Text ellipsis style={{ maxWidth: '100%', fontSize: 13 }} title={`${h}${r.dport ? `:${r.dport}` : ''}`}>
-        {h}
-        {r.dport ? <Text type="secondary" style={{ fontSize: 12 }}> :{r.dport}</Text> : null}
-      </Text>
+      <div style={{ maxWidth: '100%' }}>
+        <Text
+          ellipsis
+          style={{ display: 'block', fontSize: 13 }}
+          title={`${h}${r.dport ? `:${r.dport}` : ''}`}
+        >
+          {h}
+          {r.dport ? <Text type="secondary" style={{ fontSize: 12 }}> :{r.dport}</Text> : null}
+        </Text>
+        {r.targetAddr ? (
+          <Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12, lineHeight: 1.5 }}>
+            {r.targetAddr}
+          </Text>
+        ) : null}
+      </div>
     ),
   },
   {

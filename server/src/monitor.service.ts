@@ -257,6 +257,63 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     this.writer!.write(JSON.stringify(ev) + '\n');
   }
 
+  // ---------- 日志清理 ----------
+
+  /** 清理统计与日志文件，返回释放的字节数；truncateSource 为 true 时同时截断 Xray access.log */
+  clearLogs(truncateSource: boolean) {
+    let freed = 0;
+
+    // 1. 面板历史数据（data/events-*.jsonl）
+    try {
+      for (const name of fs.readdirSync(config.dataDir)) {
+        if (!/^events-\d{8}\.jsonl$/.test(name)) continue;
+        const file = path.join(config.dataDir, name);
+        try {
+          freed += fs.statSync(file).size;
+          fs.truncateSync(file, 0);
+        } catch {
+          // 忽略单个文件失败，继续清理其余文件
+        }
+      }
+    } catch {
+      // dataDir 不可读时跳过
+    }
+
+    // 2. 当天写入流需重新打开，避免继续写入已截断的旧句柄
+    if (this.writer) {
+      this.writer.end();
+      this.writer = null;
+      this.writerDay = '';
+    }
+
+    // 3. 内存中的事件
+    this.events = [];
+    this.recentOuter = [];
+
+    // 4. Xray 原始日志
+    if (truncateSource) {
+      try {
+        const before = fs.statSync(config.logPath).size;
+        fs.truncateSync(config.logPath, 0);
+        freed += before;
+        this.tailPos = 0;
+        this.tailBuf = '';
+        try {
+          fs.writeFileSync(this.tailStatePath(), JSON.stringify({ pos: 0 }));
+        } catch {
+          // 忽略状态写入失败
+        }
+      } catch {
+        // 日志文件不存在或无权限时跳过
+      }
+    }
+
+    this.logger.log(
+      `logs cleared: freed=${freed} bytes, truncateSource=${truncateSource}`,
+    );
+    return { freed, truncateSource };
+  }
+
   // ---------- log tailing ----------
 
   private tailStatePath(): string {

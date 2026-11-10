@@ -52,4 +52,9 @@ export const api = {
   userProfile: (hours, users = 10, limit = 10) =>
     request(`/api/userprofile?hours=${hours}&users=${users}&limit=${limit}`),
   server: () => request('/api/server'),
+  clearLogs: (truncateSource = true) =>
+    request('/api/logs/clear', {
+      method: 'POST',
+      body: JSON.stringify({ truncateSource }),
+    }),
 };

@@ -134,6 +134,15 @@ export class AppController {
     checkAuth(token);
     return this.serverInfo.info();
   }
+
+  @Post('logs/clear')
+  clearLogs(
+    @Headers('x-monitor-token') token: string,
+    @Body() body: { truncateSource?: boolean },
+  ) {
+    checkAuth(token);
+    return this.monitor.clearLogs(body?.truncateSource !== false);
+  }
 }
 
 export { countryName };

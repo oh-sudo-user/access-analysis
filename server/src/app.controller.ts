@@ -9,6 +9,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { MonitorService, countryName } from './monitor.service';
+import { ServerInfoService } from './server-info.service';
 import { config } from './config';
 
 function checkAuth(token: string | undefined) {
@@ -26,7 +27,10 @@ function hoursOf(raw: string | undefined): number {
 
 @Controller('api')
 export class AppController {
-  constructor(private readonly monitor: MonitorService) {}
+  constructor(
+    private readonly monitor: MonitorService,
+    private readonly serverInfo: ServerInfoService,
+  ) {}
 
   @Get('meta')
   meta() {
@@ -123,6 +127,12 @@ export class AppController {
     const ul = Math.min(50, Number(users) || 10);
     const lm = Math.min(50, Number(limit) || 10);
     return { items: this.monitor.userProfile(hoursOf(hours), ul, lm) };
+  }
+
+  @Get('server')
+  server(@Headers('x-monitor-token') token: string) {
+    checkAuth(token);
+    return this.serverInfo.info();
   }
 }
 

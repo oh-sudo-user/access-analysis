@@ -24,12 +24,12 @@ export const eventColumns = [
     dataIndex: 'ip',
     width: 240,
     render: (ip, r) => (
-      <Text copyable={{ text: ip }} style={{ fontSize: 13, maxWidth: '100%' }}>
-        <span className="mono">{ip}</span>
+      <div style={{ maxWidth: '100%' }}>
+        <span className="mono" style={{ fontSize: 13 }}>{ip}</span>
         <Text type="secondary" ellipsis style={{ display: 'block', fontSize: 12, lineHeight: 1.5 }}>
           {r.addr || r.country}
         </Text>
-      </Text>
+      </div>
     ),
   },
   {

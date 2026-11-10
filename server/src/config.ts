@@ -11,6 +11,7 @@ export interface AppConfig {
   publicDir: string;
   rangeHours: number;
   siteName: string;
+  trafficQuotaGB: number;
 }
 
 const configPath = process.env.MONITOR_CONFIG || path.join(process.cwd(), 'config.json');
@@ -25,6 +26,7 @@ const defaults: AppConfig = {
   publicDir: path.join(process.cwd(), '..', 'public'),
   rangeHours: 24,
   siteName: '代理访问监控',
+  trafficQuotaGB: 0,
 };
 
 let fileConfig: Partial<AppConfig> = {};

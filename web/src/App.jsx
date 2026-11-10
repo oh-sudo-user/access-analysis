@@ -10,12 +10,14 @@ import Traffic from './pages/Traffic';
 import Clients from './pages/Clients';
 import Security from './pages/Security';
 import Logs from './pages/Logs';
+import Server from './pages/Server';
 
 const TABS = [
   { key: 'overview', label: '总览' },
   { key: 'traffic', label: '流量' },
   { key: 'clients', label: '客户端' },
   { key: 'security', label: '安全' },
+  { key: 'server', label: '服务器' },
   { key: 'logs', label: '日志' },
 ];
 
@@ -89,6 +91,7 @@ function Shell({ onLogout, siteName }) {
           {active.key === 'traffic' && <Traffic />}
           {active.key === 'clients' && <Clients />}
           {active.key === 'security' && <Security />}
+          {active.key === 'server' && <Server />}
           {active.key === 'logs' && <Logs />}
         </div>
         <div className="app-footer">

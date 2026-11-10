@@ -127,7 +127,8 @@ cat > /opt/monitor/server/config.json <<'EOF'
   "logPath": "/etc/v2ray-agent/xray/access.log",
   "dataDir": "/opt/monitor/server/data",
   "publicDir": "/opt/monitor/public",
-  "rangeHours": 24
+  "rangeHours": 24,
+  "trafficQuotaGB": 0
 }
 EOF
 ```
@@ -146,6 +147,7 @@ EOF
 | `dataDir` | `./data` | 持久化数据目录 |
 | `publicDir` | `../public` | 前端静态目录 |
 | `rangeHours` | 24 | 默认统计时间范围 |
+| `trafficQuotaGB` | 0 | 每月流量配额（GB），>0 时「服务器」页显示本月剩余流量；0 表示不限/未配置 |
 
 ### 4.5 systemd 服务
 

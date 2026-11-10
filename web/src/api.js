@@ -51,4 +51,5 @@ export const api = {
   userShare: (hours) => request(`/api/usershare?hours=${hours}`),
   userProfile: (hours, users = 10, limit = 10) =>
     request(`/api/userprofile?hours=${hours}&users=${users}&limit=${limit}`),
+  server: () => request('/api/server'),
 };
